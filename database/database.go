@@ -22,7 +22,7 @@ func InitDB() {
 
 	log.Println("Database connected successfully")
 
-	err = DB.AutoMigrate(&users.User{})
+	err = DB.AutoMigrate(&users.Users{})
 	if err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}

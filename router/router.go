@@ -14,6 +14,7 @@ func Route() *chi.Mux {
 		r.Get("/", handler.GetAllUsers)
 		r.Post("/", handler.CreateUser)
 		r.Get("/{id}", handler.GetUserById)
+		r.Get("/limit/{limit}", handler.GetTopUsersByLimit)
 		// r.Put("/{id}", handler.UpdateClient)
 		// r.Delete("/{id}", handler.DeleteClient)
 	})
