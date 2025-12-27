@@ -1,0 +1,10 @@
+database:
+  host: localhost
+  port: 5433
+  username: admin
+  password: admin123
+  dbname: db2
+  sslmode: disable
+
+server:
+  port: "8080"
