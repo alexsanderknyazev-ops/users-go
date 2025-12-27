@@ -5,27 +5,27 @@ import (
 	"users/users"
 )
 
-func GetAllUsers() ([]users.User, error) {
+func GetAllUsers() ([]users.Users, error) {
 	db := database.GetDB()
 	if db == nil {
 		return nil, nil
 	}
 
-	var users []users.User
+	var users []users.Users
 	result := db.Find(&users)
 
 	return users, result.Error
 }
 
-func GetUserById(id uint64) (users.User, error) {
+func GetUserById(id uint64) (users.Users, error) {
 	db := database.GetDB()
 
-	var user users.User
+	var user users.Users
 	result := db.First(&user, id)
 	return user, result.Error
 }
 
-func CreateUser(user *users.User) error {
+func CreateUser(user *users.Users) error {
 	db := database.GetDB()
 	if db == nil {
 		return nil
