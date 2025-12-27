@@ -13,7 +13,7 @@ type Users struct {
 	CreatedAt time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	DeletedAt gorm.DeletedAt `gorm:"column:deleted_at;index" json:"-"`
 	Phone     string         `gorm:"column:phone;unique;not null;size:20" json:"phone"`
-	Rate      uint64         `gorm:"column:rate; type: numeric" json:"rate"`
+	Rate      uint64         `gorm:"column:rate;default:0;type: numeric" json:"rate"`
 }
 
 func (Users) TableName() string {
