@@ -21,10 +21,10 @@ type DBConfig struct {
 func LoadDBConfig() DBConfig {
 	return DBConfig{
 		Host:     getEnv("DB_HOST", "localhost"),
-		Port:     getEnv("DB_PORT", "5433"),
+		Port:     getEnv("DB_PORT", "5440"),
 		User:     getEnv("DB_USER", "admin"),
 		Password: getEnv("DB_PASSWORD", "admin123"),
-		DBName:   getEnv("DB_NAME", "db2"),
+		DBName:   getEnv("DB_NAME", "marketdb"),
 		SSLMode:  getEnv("DB_SSLMODE", "disable"),
 	}
 }

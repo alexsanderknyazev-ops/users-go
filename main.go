@@ -15,7 +15,7 @@ func main() {
 	r := router.Route()
 	log.Default().Println("main - Init Route")
 
-	port := ":8080"
+	port := ":8072"
 	log.Printf("Server starting on %s", port)
 
 	if err := http.ListenAndServe(port, r); err != nil {
