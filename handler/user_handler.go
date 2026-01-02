@@ -61,6 +61,17 @@ func GetTopUsersByLimit(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 
 }
+func GetUserByEmail(w http.ResponseWriter, r *http.Request) {
+	email := chi.URLParam(r, "email")
+	result, err := service.GetUserByEmail(email)
+
+	if err != nil {
+		http.Error(w, "Client not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
 func CreateUser(w http.ResponseWriter, r *http.Request) {
 	var user users.Users
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {

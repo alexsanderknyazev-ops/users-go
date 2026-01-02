@@ -1,10 +1,11 @@
 package router
 
 import (
-	"users/handler"
 	"net/http"
-	"github.com/go-chi/chi/v5"
 	"time"
+	"users/handler"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func Route() *chi.Mux {
@@ -17,6 +18,7 @@ func Route() *chi.Mux {
 		r.Get("/{id}", handler.GetUserById)
 		r.Get("/limit/{limit}", handler.GetTopUsersByLimit)
 		r.Get("/health", healthCheck)
+		r.Get("/email/{email}", handler.GetUserByEmail)
 		// r.Put("/{id}", handler.UpdateClient)
 		// r.Delete("/{id}", handler.DeleteClient)
 	})

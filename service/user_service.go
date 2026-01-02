@@ -3,6 +3,7 @@ package service
 import (
 	"users/database"
 	"users/users"
+	//"go.uber.org/mock/mockgen/model"
 )
 
 func GetAllUsers() ([]users.Users, error) {
@@ -43,4 +44,12 @@ func GetTopUsers(limit int) ([]users.Users, error) {
 	var users []users.Users
 	result := db.Order("rate DESC").Limit(limit).Find(&users)
 	return users, result.Error
+}
+
+func GetUserByEmail(email string) (users.Users, error) {
+	db := database.GetDB()
+
+	var user users.Users
+	res := db.Where("email = ?", email).Find(&user)
+	return user, res.Error
 }
