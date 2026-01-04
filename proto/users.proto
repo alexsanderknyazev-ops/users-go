@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package users;
+option go_package = "users/proto";
+
+import "google/protobuf/timestamp.proto";
+
+message User {
+    uint64 id = 1;
+    string email = 2;
+    string nick_name = 3;
+    string phone = 4;
+    uint64 rate = 5;
+    google.protobuf.Timestamp created_at = 6;
+    google.protobuf.Timestamp deleted_at = 7;
+}
+
+message GetUserByEmailRequest {
+    string email = 1;
+}
+
+message GetUserByEmailResponse {
+    User user = 1;
+}
+
+message ValidateUserRequest {
+    string email = 1;
+}
+
+message ValidateUserResponse {
+    bool valid = 1;
+}
+
+service UsersService {
+    rpc GetUserByEmail(GetUserByEmailRequest) returns (GetUserByEmailResponse);
+    rpc ValidateUser(ValidateUserRequest) returns (ValidateUserResponse);
+}
