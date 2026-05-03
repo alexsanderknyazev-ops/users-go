@@ -40,7 +40,7 @@ pipeline {
     booleanParam(
       name: 'K8S_CTR_IMPORT_IMAGE',
       defaultValue: true,
-      description: 'Только при деплое через docker exec minikube: docker save → ctr import в containerd кластера, imagePullPolicy Never (без pull с HTTP registry)'
+      description: 'Только при docker exec minikube: docker save | docker load внутри ноды (cri-dockerd); imagePullPolicy Never. Не использовать ctr — kubelet не видит k8s.io import'
     )
   }
 
@@ -277,26 +277,18 @@ IMG='${params.K8S_PULL_REGISTRY}/${params.DOCKER_IMAGE}:${env.BUILD_NUMBER}'
 
 if [ "\$USE_DOCKER_EXEC" = 1 ] && [ "\$CTR_IMP" = "true" ]; then
   docker image inspect "\$LOCAL_REF" >/dev/null
-  CTR_BIN="\$(docker exec "\$MK" sh -c 'command -v ctr 2>/dev/null || command -v /usr/local/bin/ctr 2>/dev/null || true')"
-  if [ -z "\$CTR_BIN" ]; then
-    echo "В контейнере \$MK не найден ctr — отключите K8S_CTR_IMPORT_IMAGE или обновите minikube" >&2
+  # Minikube kic: kubelet → cri-dockerd → dockerd. Образы должны быть в «docker images» внутри ноды, не только в ctr -n k8s.io.
+  if ! docker exec "\$MK" sh -c 'command -v docker >/dev/null 2>&1'; then
+    echo "В \$MK нет docker — отключите K8S_CTR_IMPORT_IMAGE или обновите minikube" >&2
     exit 1
   fi
-  echo "Импорт образа \$LOCAL_REF в containerd minikube (\$CTR_BIN import)…"
-  # docker cp в kic часто не даёт ctr увидеть файл — stream в /var/tmp, затем import.
-  docker save "\$LOCAL_REF" | docker exec -i "\$MK" sh -c "cat > /var/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
-  docker exec "\$MK" "\$CTR_BIN" -n k8s.io images import "/var/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
-  docker exec "\$MK" rm -f "/var/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
-  # kubelet с imagePullPolicy Never ищет каноническое имя; короткое users-go:tag → docker.io/library/...
-  if [[ "\$NAME" == */* ]]; then
-    IMG="docker.io/\${NAME}:jenkins-\${TAG}"
-  else
-    IMG="docker.io/library/\${NAME}:jenkins-\${TAG}"
-  fi
+  echo "Загрузка \$LOCAL_REF в docker внутри \$MK (docker load для cri-dockerd)…"
+  docker save "\$LOCAL_REF" | docker exec -i "\$MK" docker load
+  IMG="\$LOCAL_REF"
   K8S_CTR_IMPORT=1
   echo "Деплой с локальным образом \$IMG и imagePullPolicy Never"
-  echo "Образы в k8s.io (фрагмент):"
-  docker exec "\$MK" "\$CTR_BIN" -n k8s.io images list 2>/dev/null | grep -F "jenkins-\${TAG}" | head -8 || true
+  echo "Образы docker в minikube (фрагмент):"
+  docker exec "\$MK" docker images 2>/dev/null | grep -F "jenkins-\${TAG}" | head -8 || true
 fi
 
 render_manifest() {
