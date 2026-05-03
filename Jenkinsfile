@@ -42,7 +42,16 @@ esac
 if [ -x /usr/local/go/bin/go ] && /usr/local/go/bin/go version 2>/dev/null | grep -qF "go\${GO_VER}"; then
   echo "Go already at \${GO_VER} under /usr/local/go"
 else
-  curl -fsSL "https://go.dev/dl/go\${GO_VER}.linux-\${GOARCH}.tar.gz" -o /tmp/go.tgz
+  GOURL="https://go.dev/dl/go\${GO_VER}.linux-\${GOARCH}.tar.gz"
+  # Повреждённый .tar.gz (обрыв сети/прокси) даёт «gzip: invalid compressed data» — проверяем gzip до rm /usr/local/go.
+  for attempt in 1 2 3; do
+    echo "Downloading Go \${GO_VER} (\${GOARCH}), attempt \${attempt}"
+    curl -fSL --connect-timeout 30 --max-time 600 --retry 5 --retry-delay 2 "\${GOURL}" -o /tmp/go.tgz
+    if gzip -t /tmp/go.tgz 2>/dev/null; then break; fi
+    echo "go.tgz is not valid gzip, retrying"
+    rm -f /tmp/go.tgz
+    if [ "\${attempt}" -eq 3 ]; then echo "Giving up after 3 attempts"; exit 1; fi
+  done
   rm -rf /usr/local/go
   tar -C /usr/local -xzf /tmp/go.tgz
 fi
