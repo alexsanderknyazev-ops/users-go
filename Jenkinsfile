@@ -7,9 +7,8 @@ pipeline {
   agent any
 
   environment {
-    // Ключ проекта sonar-project.properties — SonarCloud → URL обязан быть sonarcloud.io. Локальный SonarQube: переопредели в job: SONAR_HOST_URL=http://host.docker.internal:9000
-    SONAR_HOST_URL = 'https://sonarcloud.io'
-    // Совпадает с `toolchain` в go.mod; полный tarball + GOTOOLCHAIN=local — иначе при GOTOOLCHAIN=auto тянется другой toolchain.
+    SONAR_HOST_URL = 'http://host.docker.internal:9000'
+    // Совпадает с `toolchain` в go.mod (users-go).
     GO_VERSION = '1.24.11'
     SONAR_SCANNER_VERSION = '8.0.1.6346'
     // Для сенсоров JS/TS/CSS Sonar нужен Node.js в PATH.
@@ -59,25 +58,16 @@ go test ./... -coverprofile=coverage.out -covermode=atomic
     }
 
     stage('SonarQube analysis') {
+      environment {
+        SONAR_TOKEN = credentials('sonarqube-token')
+      }
       steps {
-        // SonarCloud: только User token (https://sonarcloud.io/account/security). Credential — тип «Secret text», не логин/пароль.
-        withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
         sh """#!/bin/bash
 set -eux
-if [ -z "\${SONAR_TOKEN:-}" ]; then echo "SONAR_TOKEN пустой — проверьте Jenkins credential sonarqube-token (Secret text)"; exit 1; fi
 if ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1; then
   apt-get update -qq
   apt-get install -y -qq curl ca-certificates unzip xz-utils
 fi
-
-# Отдельно: SonarScanner с skipJreProvisioning должен запускать реальный java.
-# В разных образах Jenkins разные имена пакетов (17 может отсутствовать в репозитории).
-if [ ! -x /usr/bin/java ]; then
-  apt-get update -qq
-  apt-get install -y -qq openjdk-17-jre-headless || apt-get install -y -qq openjdk-11-jre-headless || apt-get install -y -qq default-jre-headless || { echo "Could not install JRE via apt"; exit 1; }
-fi
-JAVA_EXE="\$(command -v java)"
-test -n "\$JAVA_EXE" && test -x "\$JAVA_EXE"
 
 ARCH="\$(uname -m)"
 case "\$ARCH" in
@@ -108,14 +98,10 @@ SCANNER_HOME="\$(find "\${SCANNER_ROOT}" -maxdepth 1 -mindepth 1 -type d -name '
 test -x "\${SCANNER_HOME}/bin/sonar-scanner"
 
 cd "\${WORKSPACE}"
-# Не ходим на api.sonarcloud.io/analysis/jres (часто 403 до основного анализа); движок на JRE из агента.
 "\${SCANNER_HOME}/bin/sonar-scanner" \\
-  -Dsonar.scanner.skipJreProvisioning=true \\
-  -Dsonar.scanner.javaExePath="\$JAVA_EXE" \\
   -Dsonar.host.url="${env.SONAR_HOST_URL}" \\
   -Dsonar.token="\${SONAR_TOKEN}"
 """
-        }
       }
     }
   }
