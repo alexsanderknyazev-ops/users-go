@@ -15,6 +15,12 @@ import (
 	"users/users"
 )
 
+const (
+	msgUnexpectedStatus = "status %d"
+	msgWant400Got       = "want 400 got %d"
+	msgWant404Got       = "want 404 got %d"
+)
+
 func testDB(t *testing.T) func() {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -42,7 +48,7 @@ func TestGetAllUsers_HTTP(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d", resp.StatusCode)
+		t.Fatalf(msgUnexpectedStatus, resp.StatusCode)
 	}
 }
 
@@ -65,7 +71,7 @@ func TestGetUserById_HTTP(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d", resp.StatusCode)
+		t.Fatalf(msgUnexpectedStatus, resp.StatusCode)
 	}
 }
 
@@ -78,7 +84,7 @@ func TestGetUserById_NotFound(t *testing.T) {
 
 	resp, _ := http.Get(ts.URL + "/999999")
 	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("want 404 got %d", resp.StatusCode)
+		t.Fatalf(msgWant404Got, resp.StatusCode)
 	}
 	resp.Body.Close()
 }
@@ -92,7 +98,7 @@ func TestGetUserById_BadID(t *testing.T) {
 
 	resp, _ := http.Get(ts.URL + "/notanumber")
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("want 400 got %d", resp.StatusCode)
+		t.Fatalf(msgWant400Got, resp.StatusCode)
 	}
 	resp.Body.Close()
 }
@@ -110,7 +116,7 @@ func TestGetTopUsersByLimit_HTTP(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d", resp.StatusCode)
+		t.Fatalf(msgUnexpectedStatus, resp.StatusCode)
 	}
 }
 
@@ -123,7 +129,7 @@ func TestGetTopUsersByLimit_BadLimit(t *testing.T) {
 
 	resp, _ := http.Get(ts.URL + "/limit/xx")
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("want 400 got %d", resp.StatusCode)
+		t.Fatalf(msgWant400Got, resp.StatusCode)
 	}
 	resp.Body.Close()
 }
@@ -145,7 +151,7 @@ func TestGetUserByEmail_HTTP(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status %d", resp.StatusCode)
+		t.Fatalf(msgUnexpectedStatus, resp.StatusCode)
 	}
 }
 
@@ -164,7 +170,7 @@ func TestCreateUser_HTTP(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("status %d", resp.StatusCode)
+		t.Fatalf(msgUnexpectedStatus, resp.StatusCode)
 	}
 }
 
@@ -181,6 +187,6 @@ func TestCreateUser_InvalidJSON(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("want 400 got %d", resp.StatusCode)
+		t.Fatalf(msgWant400Got, resp.StatusCode)
 	}
 }
