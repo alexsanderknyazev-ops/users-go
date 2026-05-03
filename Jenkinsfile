@@ -6,6 +6,14 @@
 pipeline {
   agent any
 
+  parameters {
+    string(
+      name: 'SONAR_EXTRA_OPTS',
+      defaultValue: '',
+      description: 'Доп. аргументы sonar-scanner (переопределяют properties), напр. -Dsonar.projectKey=КЛЮЧ_ИЗ_SONAR_UI'
+    )
+  }
+
   environment {
     SONAR_HOST_URL = 'http://host.docker.internal:9000'
     // Совпадает с `toolchain` в go.mod (users-go).
@@ -109,7 +117,7 @@ test -x "\${SCANNER_HOME}/bin/sonar-scanner"
 cd "\${WORKSPACE}"
 "\${SCANNER_HOME}/bin/sonar-scanner" \\
   -Dsonar.host.url="${env.SONAR_HOST_URL}" \\
-  -Dsonar.token="\${SONAR_TOKEN}"
+  -Dsonar.token="\${SONAR_TOKEN}" ${params.SONAR_EXTRA_OPTS?.trim() ?: ''}
 """
       }
     }
