@@ -137,8 +137,7 @@ cd "\${WORKSPACE}"
         sh """#!/bin/bash
 set -eux
 command -v docker
-# Реестр registry:2 без TLS: демон Docker должен разрешить HTTP (см. echo ниже при ошибке).
-# BuildKit иногда игнорирует insecure-registries — отключаем для build/push.
+# Сборка классическим builder; push в HTTP registry:2 через skopeo (--dest-tls-verify=false), без insecure-registries на демоне.
 export DOCKER_BUILDKIT=0
 export BUILDKIT_PROGRESS=plain
 
@@ -148,20 +147,31 @@ NAME='${params.DOCKER_IMAGE}'
 TAG='${env.BUILD_NUMBER}'
 FULL="\${REG}/\${NAME}:\${TAG}"
 LATEST="\${REG}/\${NAME}:latest"
+LOCAL_TAG="jenkins-\${TAG}"
 
-docker_build_push() {
-  docker build -t "\${FULL}" -t "\${LATEST}" .
-  docker push "\${FULL}"
-  docker push "\${LATEST}"
+docker build -t "\${NAME}:\${LOCAL_TAG}" .
+
+SKOPEO_IMG='quay.io/skopeo/stable:latest'
+docker pull -q "\${SKOPEO_IMG}" || docker pull "\${SKOPEO_IMG}"
+
+HOST_ARGS=()
+if docker run --help 2>&1 | grep -qF 'host-gateway'; then
+  HOST_ARGS=(--add-host=host.docker.internal:host-gateway)
+fi
+
+run_skopeo_copy() {
+  local dest="\$1"
+  docker run --rm \\
+    "\${HOST_ARGS[@]}" \\
+    -v /var/run/docker.sock:/var/run/docker.sock \\
+    "\${SKOPEO_IMG}" \\
+    copy --dest-tls-verify=false \\
+    "docker-daemon:\${NAME}:\${LOCAL_TAG}" \\
+    "docker://\${dest}"
 }
 
-docker_build_push || {
-  echo "=== Если ошибка: http: server gave HTTP response to HTTPS client ===" >&2
-  echo "В Docker Desktop → Settings → Docker Engine добавьте (и Apply & Restart):" >&2
-  echo '  "insecure-registries": ["host.docker.internal:5050","localhost:5050","127.0.0.1:5050"]' >&2
-  echo "Либо укажите в job DOCKER_REGISTRY=127.0.0.1:5050 после добавления этого хоста в insecure-registries." >&2
-  exit 1
-}
+run_skopeo_copy "\${FULL}"
+run_skopeo_copy "\${LATEST}"
 """
       }
     }
