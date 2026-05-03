@@ -25,7 +25,12 @@ pipeline {
     booleanParam(
       name: 'DEPLOY_MINIKUBE',
       defaultValue: false,
-      description: 'После push: kubectl apply в Minikube (нужны volume с хоста: ~/.kube, ~/.minikube → JENKINS_HOME и insecure-registry в minikube)'
+      description: 'После push: kubectl apply в Minikube. Либо ~/.kube в Jenkins, либо (fallback) docker exec в контейнер minikube при общем docker.sock'
+    )
+    string(
+      name: 'MINIKUBE_CONTAINER',
+      defaultValue: 'minikube',
+      description: 'Имя контейнера Minikube (docker ps), для kubectl через docker exec если нет JENKINS_HOME/.kube/config'
     )
     string(
       name: 'K8S_PULL_REGISTRY',
@@ -194,47 +199,65 @@ run_skopeo_copy "\${LATEST}"
         sh """#!/bin/bash
 set -eux
 cd "\${WORKSPACE}"
+command -v docker
 
-# --- kubectl (образ Jenkins часто без бинарника) ---
-ARCH="\$(uname -m)"
-case "\$ARCH" in aarch64|arm64) KARCH=arm64 ;; x86_64) KARCH=amd64 ;; *) echo "unsupported arch: \$ARCH"; exit 1 ;; esac
-KVER="\$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
-KUBECTL="/tmp/kubectl-\${KVER}"
-if [ ! -x "\$KUBECTL" ]; then
-  curl -fSL "https://dl.k8s.io/release/\${KVER}/bin/linux/\${KARCH}/kubectl" -o "\$KUBECTL"
-  chmod +x "\$KUBECTL"
-fi
+JHOME="\${JENKINS_HOME:-\$HOME}"
+MK='${params.MINIKUBE_CONTAINER}'
+USE_DOCKER_EXEC=0
+KUBECTL=""
 
-# --- kubeconfig: из контейнера API недоступен на 127.0.0.1 → host.docker.internal ---
-KCFG="/tmp/kubeconfig-jenkins-\${BUILD_NUMBER}"
-test -f "\${JENKINS_HOME:-\$HOME}/.kube/config" || { echo "Нет \$JENKINS_HOME/.kube/config. Примонтируйте хостовый ~/.kube в контейнер Jenkins."; exit 1; }
-cp "\${JENKINS_HOME:-\$HOME}/.kube/config" "\$KCFG"
-export KUBECONFIG="\$KCFG"
-
-# Подмена адреса API (порт как в docker ps, например 59220→8443, берётся из вашего kubeconfig)
-sed -i.bak 's|127.0.0.1|host.docker.internal|g' "\$KCFG"
-
-CLUSTER="\$( "\$KUBECTL" config view --minify -o jsonpath='{.clusters[0].name}' 2>/dev/null || echo minikube )"
-if [ -f "\${JENKINS_HOME:-\$HOME}/.minikube/ca.crt" ]; then
-  SERVER="\$( "\$KUBECTL" config view --minify -o jsonpath='{.clusters[0].cluster.server}' )"
-  "\$KUBECTL" config set-cluster "\$CLUSTER" --server="\$SERVER" --certificate-authority="\${JENKINS_HOME:-\$HOME}/.minikube/ca.crt" --embed-certs=false --kubeconfig="\$KCFG"
+if [ -f "\$JHOME/.kube/config" ]; then
+  ARCH="\$(uname -m)"
+  case "\$ARCH" in aarch64|arm64) KARCH=arm64 ;; x86_64) KARCH=amd64 ;; *) echo "unsupported arch: \$ARCH"; exit 1 ;; esac
+  KVER="\$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+  KUBECTL="/tmp/kubectl-\${KVER}"
+  if [ ! -x "\$KUBECTL" ]; then
+    curl -fSL "https://dl.k8s.io/release/\${KVER}/bin/linux/\${KARCH}/kubectl" -o "\$KUBECTL"
+    chmod +x "\$KUBECTL"
+  fi
+  KCFG="/tmp/kubeconfig-jenkins-\${BUILD_NUMBER}"
+  cp "\$JHOME/.kube/config" "\$KCFG"
+  export KUBECONFIG="\$KCFG"
+  sed -i.bak 's|127.0.0.1|host.docker.internal|g' "\$KCFG"
+  CLUSTER="\$( "\$KUBECTL" config view --minify -o jsonpath='{.clusters[0].name}' 2>/dev/null || echo minikube )"
+  if [ -f "\$JHOME/.minikube/ca.crt" ]; then
+    SERVER="\$( "\$KUBECTL" config view --minify -o jsonpath='{.clusters[0].cluster.server}' )"
+    "\$KUBECTL" config set-cluster "\$CLUSTER" --server="\$SERVER" --certificate-authority="\$JHOME/.minikube/ca.crt" --embed-certs=false --kubeconfig="\$KCFG"
+  else
+    echo "WARN: нет \$JHOME/.minikube/ca.crt — TLS verify off (лаборатория)."
+    "\$KUBECTL" config set-cluster "\$CLUSTER" --insecure-skip-tls-verify=true --kubeconfig="\$KCFG"
+  fi
+  "\$KUBECTL" cluster-info
 else
-  echo "WARN: нет \$JENKINS_HOME/.minikube/ca.crt — TLS verify off (лаборатория). Примонтируйте ~/.minikube."
-  "\$KUBECTL" config set-cluster "\$CLUSTER" --insecure-skip-tls-verify=true --kubeconfig="\$KCFG"
+  if docker inspect "\$MK" >/dev/null 2>&1; then
+    USE_DOCKER_EXEC=1
+    echo "kubeconfig в Jenkins нет — kubectl через docker exec \$MK"
+    docker exec "\$MK" kubectl cluster-info
+  else
+    echo "Нет \$JHOME/.kube/config и Docker-контейнер '\$MK' не найден."
+    echo "Смонтируйте хостовый ~/.kube в Jenkins (-v ~/.kube:/var/jenkins_home/.kube) или задайте MINIKUBE_CONTAINER."
+    exit 1
+  fi
 fi
-
-"\$KUBECTL" cluster-info
 
 IMG='${params.K8S_PULL_REGISTRY}/${params.DOCKER_IMAGE}:${env.BUILD_NUMBER}'
-# Подставляем образ с тегом билда (в YAML зафиксирован тег для Sonar/IaC).
-while IFS= read -r line || [[ -n "\$line" ]]; do
-  if [[ "\$line" =~ ^([[:space:]]*)image:[[:space:]].* ]]; then
-    echo "\${BASH_REMATCH[1]}image: \${IMG}"
-  else
-    echo "\$line"
-  fi
-done < k8s/user-service-registry.yaml | "\$KUBECTL" apply -f -
-"\$KUBECTL" -n market rollout status deployment/user-service --timeout=180s
+render_manifest() {
+  while IFS= read -r line || [[ -n "\$line" ]]; do
+    if [[ "\$line" =~ ^([[:space:]]*)image:[[:space:]].* ]]; then
+      echo "\${BASH_REMATCH[1]}image: \${IMG}"
+    else
+      echo "\$line"
+    fi
+  done < k8s/user-service-registry.yaml
+}
+
+if [ "\$USE_DOCKER_EXEC" = 1 ]; then
+  render_manifest | docker exec -i "\$MK" kubectl apply -f -
+  docker exec "\$MK" kubectl -n market rollout status deployment/user-service --timeout=180s
+else
+  render_manifest | "\$KUBECTL" apply -f -
+  "\$KUBECTL" -n market rollout status deployment/user-service --timeout=180s
+fi
 """
       }
     }
