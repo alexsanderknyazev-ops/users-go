@@ -7,7 +7,8 @@ pipeline {
   agent any
 
   environment {
-    SONAR_HOST_URL = 'http://host.docker.internal:9000'
+    // SonarCloud: https://sonarcloud.io. Самостоятельный SonarQube: http(s)://<хост>:9000 (переопредели в job).
+    SONAR_HOST_URL = 'https://sonarcloud.io'
     // Совпадает с `toolchain` в go.mod; полный tarball + GOTOOLCHAIN=local — иначе при GOTOOLCHAIN=auto тянется другой toolchain.
     GO_VERSION = '1.24.11'
     SONAR_SCANNER_VERSION = '8.0.1.6346'
