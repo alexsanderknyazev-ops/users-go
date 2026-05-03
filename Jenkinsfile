@@ -7,9 +7,8 @@ pipeline {
   agent any
 
   environment {
-    // SonarQube на хосте: из контейнера Jenkins localhost ≠ хост. Как у рабочего пайплайна — host.docker.internal.
-    // Если агент без Docker на той же машине, что Sonar — переопредели в job: SONAR_HOST_URL=http://127.0.0.1:9000
-    SONAR_HOST_URL = 'http://host.docker.internal:9000'
+    // Ключ проекта sonar-project.properties — SonarCloud → URL обязан быть sonarcloud.io. Локальный SonarQube: переопредели в job: SONAR_HOST_URL=http://host.docker.internal:9000
+    SONAR_HOST_URL = 'https://sonarcloud.io'
     // Совпадает с `toolchain` в go.mod; полный tarball + GOTOOLCHAIN=local — иначе при GOTOOLCHAIN=auto тянется другой toolchain.
     GO_VERSION = '1.24.11'
     SONAR_SCANNER_VERSION = '8.0.1.6346'
