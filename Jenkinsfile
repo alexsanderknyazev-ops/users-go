@@ -35,7 +35,12 @@ pipeline {
     string(
       name: 'K8S_PULL_REGISTRY',
       defaultValue: 'host.minikube.internal:5050',
-      description: 'Registry host:port для kubelet (обычно host.minikube.internal:5050). Нужен minikube start --insecure-registry с этим хостом, если registry:2 по HTTP на хосте'
+      description: 'Registry host:port для образа в манифесте, если K8S_CTR_IMPORT_IMAGE=false'
+    )
+    booleanParam(
+      name: 'K8S_CTR_IMPORT_IMAGE',
+      defaultValue: true,
+      description: 'Только при деплое через docker exec minikube: docker save → ctr import в containerd кластера, imagePullPolicy Never (без pull с HTTP registry)'
     )
   }
 
@@ -263,11 +268,38 @@ if [ "\$USE_DOCKER_EXEC" = 1 ]; then
   docker exec -e KUBECONFIG="\$MK_KUBECONFIG" "\$MK" "\$MK_KUBECTL" cluster-info
 fi
 
+NAME='${params.DOCKER_IMAGE}'
+TAG='${env.BUILD_NUMBER}'
+LOCAL_REF="\${NAME}:jenkins-\${TAG}"
+CTR_IMP='${params.K8S_CTR_IMPORT_IMAGE}'
+K8S_CTR_IMPORT=0
 IMG='${params.K8S_PULL_REGISTRY}/${params.DOCKER_IMAGE}:${env.BUILD_NUMBER}'
+
+if [ "\$USE_DOCKER_EXEC" = 1 ] && [ "\$CTR_IMP" = "true" ]; then
+  docker image inspect "\$LOCAL_REF" >/dev/null
+  CTR_BIN="\$(docker exec "\$MK" sh -c 'command -v ctr 2>/dev/null || command -v /usr/local/bin/ctr 2>/dev/null || true')"
+  if [ -z "\$CTR_BIN" ]; then
+    echo "В контейнере \$MK не найден ctr — отключите K8S_CTR_IMPORT_IMAGE или обновите minikube" >&2
+    exit 1
+  fi
+  echo "Импорт образа \$LOCAL_REF в containerd minikube (\$CTR_BIN import)…"
+  SAVE_TAR="/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
+  docker save "\$LOCAL_REF" -o "\$SAVE_TAR"
+  docker cp "\$SAVE_TAR" "\$MK:/tmp/k8s-ctr-import.tar"
+  docker exec "\$MK" "\$CTR_BIN" -n k8s.io images import /tmp/k8s-ctr-import.tar
+  docker exec "\$MK" rm -f /tmp/k8s-ctr-import.tar
+  rm -f "\$SAVE_TAR"
+  IMG="\$LOCAL_REF"
+  K8S_CTR_IMPORT=1
+  echo "Деплой с локальным образом \$IMG и imagePullPolicy Never"
+fi
+
 render_manifest() {
   while IFS= read -r line || [[ -n "\$line" ]]; do
     if [[ "\$line" =~ ^([[:space:]]*)image:[[:space:]].* ]]; then
       echo "\${BASH_REMATCH[1]}image: \${IMG}"
+    elif [[ "\${K8S_CTR_IMPORT}" = 1 ]] && [[ "\$line" =~ imagePullPolicy:[[:space:]]*Always ]]; then
+      echo "\${line/Always/Never}"
     else
       echo "\$line"
     fi
@@ -276,7 +308,7 @@ render_manifest() {
 
 REG_PULL='${params.K8S_PULL_REGISTRY}'
 registry_probe() {
-  if [ "\$USE_DOCKER_EXEC" != 1 ]; then return 0; fi
+  if [ "\$USE_DOCKER_EXEC" != 1 ] || [ "\${K8S_CTR_IMPORT:-0}" = 1 ]; then return 0; fi
   if ! docker exec "\$MK" sh -c 'command -v curl >/dev/null 2>&1'; then
     echo "WARN: в minikube нет curl — проверку http://\${REG_PULL}/v2/ пропускаем"
     return 0

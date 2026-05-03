@@ -1,10 +1,8 @@
 # Образ со статичным тегом для Sonar/IaC; в CI строка image: заменяется на K8S_PULL_REGISTRY/DOCKER_IMAGE:BUILD_NUMBER.
 #
-# Если под в ImagePullBackOff / "trying and failing to pull image" — registry на хосте по HTTP:
-#   minikube stop
-#   minikube start --insecure-registry "host.minikube.internal:5050"
-# (или добавьте этот хост в insecure-registry вашего профиля и перезапустите кластер.)
-# Проверка с ноды: minikube ssh -- curl -sI http://host.minikube.internal:5050/v2/
+# Если под в ImagePullBackOff при pull с HTTP registry — Jenkins по умолчанию делает ctr import
+# (docker save → ctr -n k8s.io images import в minikube, imagePullPolicy Never), без insecure-registry.
+# Иначе: minikube start --insecure-registry "host.minikube.internal:5050" и K8S_CTR_IMPORT_IMAGE=false.
 apiVersion: v1
 kind: Namespace
 metadata:
