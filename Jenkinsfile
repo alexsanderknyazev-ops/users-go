@@ -22,6 +22,11 @@ pipeline {
       defaultValue: 'users-go',
       description: 'Имя образа в реестре (без registry-префикса)'
     )
+    booleanParam(
+      name: 'RUN_DOCKER_PUSH',
+      defaultValue: false,
+      description: 'Включить build/push в registry. Нужен insecure-registries в Docker Engine; иначе оставьте выкл., чтобы job был зелёным.'
+    )
   }
 
   environment {
@@ -133,6 +138,9 @@ cd "\${WORKSPACE}"
     }
 
     stage('Docker build and push') {
+      when {
+        expression { return params.RUN_DOCKER_PUSH }
+      }
       steps {
         sh """#!/bin/bash
 set -eux
