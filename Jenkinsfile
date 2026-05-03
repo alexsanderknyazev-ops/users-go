@@ -76,7 +76,7 @@ go test ./... -coverprofile=coverage.out -covermode=atomic
 
     stage('SonarQube analysis') {
       environment {
-        SONAR_TOKEN = credentials('sonarqube-token')
+        SONAR_TOKEN = credentials('sonarqube-token-user-go')
       }
       steps {
         sh """#!/bin/bash
