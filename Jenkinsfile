@@ -42,6 +42,16 @@ pipeline {
       defaultValue: true,
       description: 'Только при docker exec minikube: docker save | docker load внутри ноды (cri-dockerd); imagePullPolicy Never. Не использовать ctr — kubelet не видит k8s.io import'
     )
+    string(
+      name: 'K8S_DB_HOST',
+      defaultValue: 'host.minikube.internal',
+      description: 'DB host в Pod (нет Service postgres в кластере → хост Mac: host.minikube.internal; в кластере Postgres — postgres)'
+    )
+    string(
+      name: 'K8S_DB_PORT',
+      defaultValue: '5433',
+      description: 'Порт Postgres на хосте (как в resurse/property.yaml); для in-cluster обычно 5432'
+    )
   }
 
   environment {
@@ -291,8 +301,13 @@ if [ "\$USE_DOCKER_EXEC" = 1 ] && [ "\$CTR_IMP" = "true" ]; then
   docker exec "\$MK" docker images 2>/dev/null | grep -F "jenkins-\${TAG}" | head -8 || true
 fi
 
+K8S_DB_HOST='${params.K8S_DB_HOST}'
+K8S_DB_PORT='${params.K8S_DB_PORT}'
+
 render_manifest() {
   while IFS= read -r line || [[ -n "\$line" ]]; do
+    line="\${line//__K8S_DB_HOST__/\$K8S_DB_HOST}"
+    line="\${line//__K8S_DB_PORT__/\$K8S_DB_PORT}"
     if [[ "\$line" =~ ^([[:space:]]*)image:[[:space:]].* ]]; then
       echo "\${BASH_REMATCH[1]}image: \${IMG}"
     elif [[ "\${K8S_CTR_IMPORT}" = 1 ]] && [[ "\$line" =~ imagePullPolicy:[[:space:]]*Always ]]; then

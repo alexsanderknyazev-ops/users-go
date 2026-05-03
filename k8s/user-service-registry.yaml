@@ -35,10 +35,11 @@ spec:
           env:
             - name: APP_PORT
               value: "8072"
+            # Плейсхолдеры подставляет Jenkins (по умолчанию host.minikube.internal:5433 — Postgres на хосте).
             - name: DB_HOST
-              value: "postgres"
+              value: "__K8S_DB_HOST__"
             - name: DB_PORT
-              value: "5432"
+              value: "__K8S_DB_PORT__"
             - name: DB_USER
               value: "admin"
             - name: DB_PASSWORD
