@@ -1,6 +1,5 @@
-# Образ подставляется в Jenkins (sed __IMAGE__).
-# С ноды Minikube (Docker Desktop) реестр на хосте: host.minikube.internal:5050
-# (нужен minikube с --insecure-registry, см. комментарий в Jenkinsfile).
+# Образ со статичным тегом для Sonar/IaC; в CI строка image: заменяется на K8S_PULL_REGISTRY/DOCKER_IMAGE:BUILD_NUMBER.
+# С ноды Minikube: host.minikube.internal:5050 (нужен minikube --insecure-registry).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -23,9 +22,10 @@ spec:
       labels:
         app: user-service
     spec:
+      automountServiceAccountToken: false
       containers:
         - name: user-service
-          image: __IMAGE__
+          image: host.minikube.internal:5050/users-go:1.0.0
           imagePullPolicy: Always
           ports:
             - containerPort: 8072
@@ -58,9 +58,11 @@ spec:
             requests:
               memory: "128Mi"
               cpu: "100m"
+              ephemeral-storage: "256Mi"
             limits:
               memory: "256Mi"
               cpu: "200m"
+              ephemeral-storage: "512Mi"
 ---
 apiVersion: v1
 kind: Service

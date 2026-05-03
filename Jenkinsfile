@@ -226,7 +226,14 @@ fi
 "\$KUBECTL" cluster-info
 
 IMG='${params.K8S_PULL_REGISTRY}/${params.DOCKER_IMAGE}:${env.BUILD_NUMBER}'
-sed "s|__IMAGE__|\${IMG}|g" k8s/user-service-registry.yaml | "\$KUBECTL" apply -f -
+# Подставляем образ с тегом билда (в YAML зафиксирован тег для Sonar/IaC).
+while IFS= read -r line || [[ -n "\$line" ]]; do
+  if [[ "\$line" =~ ^([[:space:]]*)image:[[:space:]].* ]]; then
+    echo "\${BASH_REMATCH[1]}image: \${IMG}"
+  else
+    echo "\$line"
+  fi
+done < k8s/user-service-registry.yaml | "\$KUBECTL" apply -f -
 "\$KUBECTL" -n market rollout status deployment/user-service --timeout=180s
 """
       }
