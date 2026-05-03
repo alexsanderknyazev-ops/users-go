@@ -12,6 +12,16 @@ pipeline {
       defaultValue: '',
       description: 'Доп. аргументы sonar-scanner (переопределяют properties), напр. -Dsonar.projectKey=КЛЮЧ_ИЗ_SONAR_UI'
     )
+    string(
+      name: 'DOCKER_REGISTRY',
+      defaultValue: 'host.docker.internal:5050',
+      description: 'Docker registry host:port. Jenkins в Docker → host.docker.internal:5050; агент на хосте → localhost:5050'
+    )
+    string(
+      name: 'DOCKER_IMAGE',
+      defaultValue: 'users-go',
+      description: 'Имя образа в реестре (без registry-префикса)'
+    )
   }
 
   environment {
@@ -118,6 +128,24 @@ cd "\${WORKSPACE}"
 "\${SCANNER_HOME}/bin/sonar-scanner" \\
   -Dsonar.host.url="${env.SONAR_HOST_URL}" \\
   -Dsonar.token="\${SONAR_TOKEN}" ${params.SONAR_EXTRA_OPTS?.trim() ?: ''}
+"""
+      }
+    }
+
+    stage('Docker build and push') {
+      steps {
+        sh """#!/bin/bash
+set -eux
+command -v docker
+cd "\${WORKSPACE}"
+REG='${params.DOCKER_REGISTRY}'
+NAME='${params.DOCKER_IMAGE}'
+TAG='${env.BUILD_NUMBER}'
+FULL="\${REG}/\${NAME}:\${TAG}"
+LATEST="\${REG}/\${NAME}:latest"
+docker build -t "\${FULL}" -t "\${LATEST}" .
+docker push "\${FULL}"
+docker push "\${LATEST}"
 """
       }
     }
