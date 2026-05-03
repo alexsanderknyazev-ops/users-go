@@ -137,15 +137,31 @@ cd "\${WORKSPACE}"
         sh """#!/bin/bash
 set -eux
 command -v docker
+# Реестр registry:2 без TLS: демон Docker должен разрешить HTTP (см. echo ниже при ошибке).
+# BuildKit иногда игнорирует insecure-registries — отключаем для build/push.
+export DOCKER_BUILDKIT=0
+export BUILDKIT_PROGRESS=plain
+
 cd "\${WORKSPACE}"
 REG='${params.DOCKER_REGISTRY}'
 NAME='${params.DOCKER_IMAGE}'
 TAG='${env.BUILD_NUMBER}'
 FULL="\${REG}/\${NAME}:\${TAG}"
 LATEST="\${REG}/\${NAME}:latest"
-docker build -t "\${FULL}" -t "\${LATEST}" .
-docker push "\${FULL}"
-docker push "\${LATEST}"
+
+docker_build_push() {
+  docker build -t "\${FULL}" -t "\${LATEST}" .
+  docker push "\${FULL}"
+  docker push "\${LATEST}"
+}
+
+docker_build_push || {
+  echo "=== Если ошибка: http: server gave HTTP response to HTTPS client ===" >&2
+  echo "В Docker Desktop → Settings → Docker Engine добавьте (и Apply & Restart):" >&2
+  echo '  "insecure-registries": ["host.docker.internal:5050","localhost:5050","127.0.0.1:5050"]' >&2
+  echo "Либо укажите в job DOCKER_REGISTRY=127.0.0.1:5050 после добавления этого хоста в insecure-registries." >&2
+  exit 1
+}
 """
       }
     }
