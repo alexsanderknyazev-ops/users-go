@@ -65,9 +65,9 @@ go test ./... -coverprofile=coverage.out -covermode=atomic
       steps {
         sh """#!/bin/bash
 set -eux
-if ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1 || ! command -v java >/dev/null 2>&1; then
+if ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1; then
   apt-get update -qq
-  apt-get install -y -qq curl ca-certificates unzip xz-utils openjdk-17-jre-headless
+  apt-get install -y -qq curl ca-certificates unzip xz-utils
 fi
 
 ARCH="\$(uname -m)"
@@ -99,10 +99,7 @@ SCANNER_HOME="\$(find "\${SCANNER_ROOT}" -maxdepth 1 -mindepth 1 -type d -name '
 test -x "\${SCANNER_HOME}/bin/sonar-scanner"
 
 cd "\${WORKSPACE}"
-# Без skipJreProvisioning сканер ходит на api.sonarcloud.io/analysis/jres с токеном — при 403 см. SONAR_TOKEN и тип credential (Secret text).
 "\${SCANNER_HOME}/bin/sonar-scanner" \\
-  -Dsonar.scanner.skipJreProvisioning=true \\
-  -Dsonar.scanner.javaExePath=/usr/bin/java \\
   -Dsonar.host.url="${env.SONAR_HOST_URL}" \\
   -Dsonar.token="\${SONAR_TOKEN}"
 """
