@@ -70,10 +70,11 @@ if ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! 
   apt-get install -y -qq curl ca-certificates unzip xz-utils
 fi
 
-# Отдельно: SonarScanner с skipJreProvisioning должен запускать реальный java (не хардкод /usr/bin/java — на образе его может не быть).
+# Отдельно: SonarScanner с skipJreProvisioning должен запускать реальный java.
+# В разных образах Jenkins разные имена пакетов (17 может отсутствовать в репозитории).
 if [ ! -x /usr/bin/java ]; then
   apt-get update -qq
-  apt-get install -y -qq openjdk-17-jre-headless
+  apt-get install -y -qq openjdk-17-jre-headless || apt-get install -y -qq openjdk-11-jre-headless || apt-get install -y -qq default-jre-headless || { echo "Could not install JRE via apt"; exit 1; }
 fi
 JAVA_EXE="\$(command -v java)"
 test -n "\$JAVA_EXE" && test -x "\$JAVA_EXE"
