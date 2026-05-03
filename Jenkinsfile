@@ -287,9 +287,16 @@ if [ "\$USE_DOCKER_EXEC" = 1 ] && [ "\$CTR_IMP" = "true" ]; then
   docker save "\$LOCAL_REF" | docker exec -i "\$MK" sh -c "cat > /var/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
   docker exec "\$MK" "\$CTR_BIN" -n k8s.io images import "/var/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
   docker exec "\$MK" rm -f "/var/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
-  IMG="\$LOCAL_REF"
+  # kubelet с imagePullPolicy Never ищет каноническое имя; короткое users-go:tag → docker.io/library/...
+  if [[ "\$NAME" == */* ]]; then
+    IMG="docker.io/\${NAME}:jenkins-\${TAG}"
+  else
+    IMG="docker.io/library/\${NAME}:jenkins-\${TAG}"
+  fi
   K8S_CTR_IMPORT=1
   echo "Деплой с локальным образом \$IMG и imagePullPolicy Never"
+  echo "Образы в k8s.io (фрагмент):"
+  docker exec "\$MK" "\$CTR_BIN" -n k8s.io images list 2>/dev/null | grep -F "jenkins-\${TAG}" | head -8 || true
 fi
 
 render_manifest() {
