@@ -59,12 +59,12 @@ go test ./... -coverprofile=coverage.out -covermode=atomic
     }
 
     stage('SonarQube analysis') {
-      environment {
-        SONAR_TOKEN = credentials('sonarqube-token')
-      }
       steps {
+        // SonarCloud: только User token (https://sonarcloud.io/account/security). Credential — тип «Secret text», не логин/пароль.
+        withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
         sh """#!/bin/bash
 set -eux
+if [ -z "\${SONAR_TOKEN:-}" ]; then echo "SONAR_TOKEN пустой — проверьте Jenkins credential sonarqube-token (Secret text)"; exit 1; fi
 if ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1; then
   apt-get update -qq
   apt-get install -y -qq curl ca-certificates unzip xz-utils
@@ -115,6 +115,7 @@ cd "\${WORKSPACE}"
   -Dsonar.host.url="${env.SONAR_HOST_URL}" \\
   -Dsonar.token="\${SONAR_TOKEN}"
 """
+        }
       }
     }
   }
