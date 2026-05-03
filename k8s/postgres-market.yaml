@@ -1,9 +1,19 @@
-# Postgres в namespace market (Service postgres:5432) — как ожидает user-service при DB_HOST=postgres.
+# =============================================================================
+# PostgreSQL в namespace market (лабораторный стенд)
+# =============================================================================
+# Назначение: один Postgres для user-service по DNS-имени «postgres», порт 5432.
+# Учётные данные согласованы с env в user-service-registry.yaml:
+#   пользователь admin, БД marketdb, пароль в Secret postgres-secret.
+#
+# Применение: kubectl apply -f k8s/postgres-market.yaml
+# Внимание: пароль в открытом виде в git — только для локальной разработки.
+# =============================================================================
 apiVersion: v1
 kind: Namespace
 metadata:
   name: market
 ---
+# Secret: пароль суперпользователя Postgres (POSTGRES_PASSWORD).
 apiVersion: v1
 kind: Secret
 metadata:
@@ -12,6 +22,7 @@ metadata:
 stringData:
   POSTGRES_PASSWORD: admin123
 ---
+# Deployment: образ postgres:16-alpine, одна реплика.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -52,6 +63,7 @@ spec:
               memory: "512Mi"
               cpu: "500m"
 ---
+# Service: имя «postgres» — то же хостname, что ожидает приложение (DB_HOST=postgres).
 apiVersion: v1
 kind: Service
 metadata:

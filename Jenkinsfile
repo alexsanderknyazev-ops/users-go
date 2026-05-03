@@ -1,17 +1,27 @@
-// Jenkins: Go-тесты + SonarScanner без вложенного «docker run -v $WORKSPACE».
-// Иначе Docker-демон на хосте не видит файлы из volume Jenkins → пустой /workspace → нет go.mod.
+// =============================================================================
+// Jenkinsfile — CI для users-go (лабораторный контур: Jenkins + Sonar + registry + Minikube)
+// =============================================================================
+// Поток стадий:
+//   1. Checkout — код из SCM.
+//   2. Go test + coverage — ставим Go в агенте, go test, coverage.out (без docker run -v workspace: демон не видит файлы).
+//   3. SonarQube — sonar-scanner + Node (сенсоры), токен из credentials.
+//   4. Docker build and push — docker build локальный тег; Skopeo push в HTTP registry (без insecure-registry на демоне).
+//   5. Deploy to Minikube (опционально) — kubectl apply k8s/user-service-registry.yaml; см. комментарии внутри stage.
 //
-// Здесь: ставим Go и sonar-scanner-cli внутри контейнера Jenkins (curl + tar/unzip).
+// Параметры ниже задают registry, имя образа, включение деплоя, БД и т.д. (подробности — в description каждого параметра).
+// =============================================================================
 
 pipeline {
   agent any
 
   parameters {
+    // --- SonarQube: доп. аргументы sonar-scanner (переопределение properties из UI) ---
     string(
       name: 'SONAR_EXTRA_OPTS',
       defaultValue: '',
       description: 'Доп. аргументы sonar-scanner (переопределяют properties), напр. -Dsonar.projectKey=КЛЮЧ_ИЗ_SONAR_UI'
     )
+    // --- Docker registry / имя образа (Skopeo push после docker build) ---
     string(
       name: 'DOCKER_REGISTRY',
       defaultValue: 'host.docker.internal:5050',
@@ -22,6 +32,7 @@ pipeline {
       defaultValue: 'users-go',
       description: 'Имя образа в реестре (без registry-префикса)'
     )
+    // --- Kubernetes / Minikube: включение деплоя, контейнер minikube, registry для pull-манифеста ---
     booleanParam(
       name: 'DEPLOY_MINIKUBE',
       defaultValue: false,
@@ -37,11 +48,13 @@ pipeline {
       defaultValue: 'host.minikube.internal:5050',
       description: 'Registry host:port для образа в манифесте, если K8S_CTR_IMPORT_IMAGE=false'
     )
+    // Локальная загрузка образа в dockerd ноды minikube (см. комментарий в stage Deploy).
     booleanParam(
       name: 'K8S_CTR_IMPORT_IMAGE',
       defaultValue: true,
       description: 'Только при docker exec minikube: docker save | docker load внутри ноды (cri-dockerd); imagePullPolicy Never. Не использовать ctr — kubelet не видит k8s.io import'
     )
+    // --- БД для подов user-service (плейсхолдеры в k8s/user-service-registry.yaml) ---
     string(
       name: 'K8S_DB_HOST',
       defaultValue: 'postgres',
@@ -54,6 +67,7 @@ pipeline {
     )
   }
 
+  // Переменные окружения для стадий Sonar/Go (версии инструментов; SONAR_HOST_URL — к Sonar в Docker на хосте).
   environment {
     SONAR_HOST_URL = 'http://host.docker.internal:9000'
     // Совпадает с `toolchain` в go.mod (users-go).
@@ -64,12 +78,14 @@ pipeline {
   }
 
   stages {
+    // --- Клонирование репозитория ---
     stage('Checkout') {
       steps {
         checkout scm
       }
     }
 
+    // --- Тесты Go и покрытие (артефакт coverage.out для Sonar) ---
     stage('Go test + coverage') {
       steps {
         // GOTOOLCHAIN=local до любого вызова go: иначе под auto может подтянуться другой toolchain, чем бинарь в /usr/local/go.
@@ -114,6 +130,7 @@ go test ./... -coverprofile=coverage.out -covermode=atomic
       }
     }
 
+    // --- Статический анализ SonarQube (sonar-project.properties в корне); при FAILED Quality Gate сканер падает с кодом 3 ---
     stage('SonarQube analysis') {
       environment {
         SONAR_TOKEN = credentials('sonarqube-token-user-go')
@@ -162,6 +179,7 @@ cd "\${WORKSPACE}"
       }
     }
 
+    // --- Сборка образа на Docker-демоне агента и публикация в registry (Skopeo, теги BUILD_NUMBER и latest) ---
     stage('Docker build and push') {
       steps {
         sh """#!/bin/bash
@@ -184,11 +202,13 @@ docker build -t "\${NAME}:\${LOCAL_TAG}" .
 SKOPEO_IMG='quay.io/skopeo/stable:latest'
 docker pull -q "\${SKOPEO_IMG}" || docker pull "\${SKOPEO_IMG}"
 
+# Skopeo в контейнере: на Linux-агенте добавляем host.docker.internal → host-gateway (доступ к registry на хосте).
 HOST_ARGS=()
 if docker run --help 2>&1 | grep -qF 'host-gateway'; then
   HOST_ARGS=(--add-host=host.docker.internal:host-gateway)
 fi
 
+# Копия образа с docker-daemon (локальный тег) в HTTP registry (--dest-tls-verify=false).
 run_skopeo_copy() {
   local dest="\$1"
   docker run --rm \\
@@ -206,6 +226,7 @@ run_skopeo_copy "\${LATEST}"
       }
     }
 
+    // --- Деплой в Minikube: kubectl apply из k8s/user-service-registry.yaml (только если DEPLOY_MINIKUBE=true) ---
     stage('Deploy to Minikube') {
       when {
         expression { return params.DEPLOY_MINIKUBE }
@@ -216,11 +237,13 @@ set -eux
 cd "\${WORKSPACE}"
 command -v docker
 
+# --- Контекст: kubeconfig в Jenkins или доступ к контейнеру minikube по docker.sock ---
 JHOME="\${JENKINS_HOME:-\$HOME}"
 MK='${params.MINIKUBE_CONTAINER}'
 USE_DOCKER_EXEC=0
 KUBECTL=""
 
+# Ветка A: есть ~/.kube/config в агенте — kubectl скачивается в /tmp, kubeconfig правится (127.0.0.1 → host.docker.internal для API из контейнера).
 if [ -f "\$JHOME/.kube/config" ]; then
   ARCH="\$(uname -m)"
   case "\$ARCH" in aarch64|arm64) KARCH=arm64 ;; x86_64) KARCH=amd64 ;; *) echo "unsupported arch: \$ARCH"; exit 1 ;; esac
@@ -244,6 +267,7 @@ if [ -f "\$JHOME/.kube/config" ]; then
   fi
   "\$KUBECTL" cluster-info
 else
+  # Ветка B: kubeconfig нет — kubectl выполняется внутри контейнера minikube (имя из MINIKUBE_CONTAINER).
   if docker inspect "\$MK" >/dev/null 2>&1; then
     USE_DOCKER_EXEC=1
     echo "kubeconfig в Jenkins нет — kubectl через docker exec \$MK"
@@ -254,7 +278,8 @@ else
   fi
 fi
 
-# В kicbase kubectl часто не в PATH; kubeconfig внутри ноды — admin.conf
+# --- Подготовка kubectl для ветки B: бинарь в образе minikube или скачанный в /tmp внутри контейнера ---
+# KUBECONFIG на ноде: /etc/kubernetes/admin.conf (или запасной путь minikube).
 MK_KUBECTL=""
 MK_KUBECONFIG="/etc/kubernetes/admin.conf"
 if [ "\$USE_DOCKER_EXEC" = 1 ]; then
@@ -278,6 +303,7 @@ if [ "\$USE_DOCKER_EXEC" = 1 ]; then
   docker exec -e KUBECONFIG="\$MK_KUBECONFIG" "\$MK" "\$MK_KUBECTL" cluster-info
 fi
 
+# --- Имя образа на демоне Jenkins и тег билда; IMG по умолчанию — pull из registry (если не включён локальный импорт) ---
 NAME='${params.DOCKER_IMAGE}'
 TAG='${env.BUILD_NUMBER}'
 LOCAL_REF="\${NAME}:jenkins-\${TAG}"
@@ -285,6 +311,8 @@ CTR_IMP='${params.K8S_CTR_IMPORT_IMAGE}'
 K8S_CTR_IMPORT=0
 IMG='${params.K8S_PULL_REGISTRY}/${params.DOCKER_IMAGE}:${env.BUILD_NUMBER}'
 
+# Локальный импорт в minikube (K8S_CTR_IMPORT_IMAGE=true + ветка docker exec): kubelet идёт через cri-dockerd → dockerd,
+# поэтому «docker save | docker load» в контейнер minikube; в манифесте — image users-go:jenkins-N и imagePullPolicy Never.
 if [ "\$USE_DOCKER_EXEC" = 1 ] && [ "\$CTR_IMP" = "true" ]; then
   docker image inspect "\$LOCAL_REF" >/dev/null
   # Minikube kic: kubelet → cri-dockerd → dockerd. Образы должны быть в «docker images» внутри ноды, не только в ctr -n k8s.io.
@@ -301,9 +329,11 @@ if [ "\$USE_DOCKER_EXEC" = 1 ] && [ "\$CTR_IMP" = "true" ]; then
   docker exec "\$MK" docker images 2>/dev/null | grep -F "jenkins-\${TAG}" | head -8 || true
 fi
 
+# --- Подстановка БД в YAML: плейсхолдеры __K8S_DB_HOST__ / __K8S_DB_PORT__ (параметры job) ---
 K8S_DB_HOST='${params.K8S_DB_HOST}'
 K8S_DB_PORT='${params.K8S_DB_PORT}'
 
+# Читает k8s/user-service-registry.yaml построчно: подставляет БД, image (IMG), при K8S_CTR_IMPORT=1 меняет Always→Never.
 render_manifest() {
   while IFS= read -r line || [[ -n "\$line" ]]; do
     line="\${line//__K8S_DB_HOST__/\$K8S_DB_HOST}"
@@ -318,6 +348,7 @@ render_manifest() {
   done < k8s/user-service-registry.yaml
 }
 
+# Проверка доступности HTTP registry с ноды minikube (только если pull из registry, без docker load).
 REG_PULL='${params.K8S_PULL_REGISTRY}'
 registry_probe() {
   if [ "\$USE_DOCKER_EXEC" != 1 ] || [ "\${K8S_CTR_IMPORT:-0}" = 1 ]; then return 0; fi
@@ -336,6 +367,7 @@ registry_probe() {
   return 1
 }
 
+# --- apply манифеста и ожидание готовности Deployment user-service в namespace market ---
 if [ "\$USE_DOCKER_EXEC" = 1 ]; then
   registry_probe
   render_manifest | docker exec -i -e KUBECONFIG="\$MK_KUBECONFIG" "\$MK" "\$MK_KUBECTL" apply -f -

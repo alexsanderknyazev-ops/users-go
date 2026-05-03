@@ -1,13 +1,22 @@
-# Образ со статичным тегом для Sonar/IaC; в CI строка image: заменяется на K8S_PULL_REGISTRY/DOCKER_IMAGE:BUILD_NUMBER.
+# =============================================================================
+# user-service в Kubernetes (namespace market)
+# =============================================================================
+# Назначение: Deployment + Service для Go-сервиса users-go (порт 8072, health /users/health).
 #
-# Локальный деплой (K8S_CTR_IMPORT_IMAGE): Jenkins делает docker save | docker load внутри ноды minikube
-# (kubelet через cri-dockerd смотрит dockerd, не ctr k8s.io). imagePullPolicy Never.
-# Без импорта: образ из registry — нужен insecure-registry для HTTP.
+# Подстановки из Jenkins (stage «Deploy to Minikube»):
+#   • image: — на образ билда (registry или users-go:jenkins-N при docker load).
+#   • __K8S_DB_HOST__ / __K8S_DB_PORT__ — хост и порт Postgres (параметры K8S_DB_*).
+#   • imagePullPolicy: Always → Never, если образ грузится локально в minikube (docker load).
+#
+# Статический image:…:1.0.0 и Always — для Sonar/IaC; в CI перезаписываются.
+# Sonar: каталог k8s/ исключён в sonar-project.properties (лаб-манифесты).
+# =============================================================================
 apiVersion: v1
 kind: Namespace
 metadata:
   name: market
 ---
+# --- Deployment: один под user-service, лейбл app=user-service (селектор Service) ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -25,9 +34,11 @@ spec:
       labels:
         app: user-service
     spec:
+      # Не монтировать токен default ServiceAccount (требования Sonar / политика).
       automountServiceAccountToken: false
       containers:
         - name: user-service
+          # Плейсхолдер для сканеров; Jenkins подставляет реальный образ.
           image: host.minikube.internal:5050/users-go:1.0.0
           imagePullPolicy: Always
           ports:
@@ -35,7 +46,7 @@ spec:
           env:
             - name: APP_PORT
               value: "8072"
-            # Плейсхолдеры подставляет Jenkins (по умолчанию host.minikube.internal:5433 — Postgres на хосте).
+            # DB: значения __…__ заменяет Jenkins (дефолт postgres:5432 при in-cluster Postgres).
             - name: DB_HOST
               value: "__K8S_DB_HOST__"
             - name: DB_PORT
@@ -68,6 +79,7 @@ spec:
               cpu: "200m"
               ephemeral-storage: "512Mi"
 ---
+# --- Service: внутрикластерный доступ к подам с app=user-service на порту 8072 ---
 apiVersion: v1
 kind: Service
 metadata:
