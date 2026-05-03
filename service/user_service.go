@@ -3,11 +3,17 @@ package service
 import (
 	"users/database"
 	"users/users"
-	//"go.uber.org/mock/mockgen/model"
+
+	"gorm.io/gorm"
 )
 
+// getDB подменяется в тестах; в проде — database.GetDB.
+var getDB = func() *gorm.DB {
+	return database.GetDB()
+}
+
 func GetAllUsers() ([]users.Users, error) {
-	db := database.GetDB()
+	db := getDB()
 	if db == nil {
 		return nil, nil
 	}
@@ -18,7 +24,7 @@ func GetAllUsers() ([]users.Users, error) {
 	return users, result.Error
 }
 func GetUserById(id uint64) (users.Users, error) {
-	db := database.GetDB()
+	db := getDB()
 
 	var user users.Users
 	result := db.First(&user, id)
@@ -26,7 +32,7 @@ func GetUserById(id uint64) (users.Users, error) {
 }
 
 func CreateUser(user *users.Users) error {
-	db := database.GetDB()
+	db := getDB()
 	if db == nil {
 		return nil
 	}
@@ -36,7 +42,7 @@ func CreateUser(user *users.Users) error {
 }
 
 func GetTopUsers(limit int) ([]users.Users, error) {
-	db := database.GetDB()
+	db := getDB()
 	if db == nil {
 		return nil, nil
 	}
@@ -47,7 +53,7 @@ func GetTopUsers(limit int) ([]users.Users, error) {
 }
 
 func GetUserByEmail(email string) (users.Users, error) {
-	db := database.GetDB()
+	db := getDB()
 
 	var user users.Users
 	res := db.Where("email = ?", email).Find(&user)
