@@ -1,0 +1,77 @@
+# Образ подставляется в Jenkins (sed __IMAGE__).
+# С ноды Minikube (Docker Desktop) реестр на хосте: host.minikube.internal:5050
+# (нужен minikube с --insecure-registry, см. комментарий в Jenkinsfile).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: market
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: market
+  labels:
+    app: user-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+        - name: user-service
+          image: __IMAGE__
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8072
+          env:
+            - name: APP_PORT
+              value: "8072"
+            - name: DB_HOST
+              value: "postgres"
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              value: "admin"
+            - name: DB_PASSWORD
+              value: "admin123"
+            - name: DB_NAME
+              value: "marketdb"
+          readinessProbe:
+            httpGet:
+              path: /users/health
+              port: 8072
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /users/health
+              port: 8072
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  namespace: market
+spec:
+  selector:
+    app: user-service
+  ports:
+    - name: http
+      port: 8072
+      targetPort: 8072
+  type: ClusterIP
