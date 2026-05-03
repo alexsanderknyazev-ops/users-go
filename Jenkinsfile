@@ -35,7 +35,7 @@ pipeline {
     string(
       name: 'K8S_PULL_REGISTRY',
       defaultValue: 'host.minikube.internal:5050',
-      description: 'Registry host:port с точки зрения пода Minikube (Docker Desktop: host.minikube.internal:5050)'
+      description: 'Registry host:port для kubelet (обычно host.minikube.internal:5050). Нужен minikube start --insecure-registry с этим хостом, если registry:2 по HTTP на хосте'
     )
   }
 
@@ -274,7 +274,26 @@ render_manifest() {
   done < k8s/user-service-registry.yaml
 }
 
+REG_PULL='${params.K8S_PULL_REGISTRY}'
+registry_probe() {
+  if [ "\$USE_DOCKER_EXEC" != 1 ]; then return 0; fi
+  if ! docker exec "\$MK" sh -c 'command -v curl >/dev/null 2>&1'; then
+    echo "WARN: в minikube нет curl — проверку http://\${REG_PULL}/v2/ пропускаем"
+    return 0
+  fi
+  if docker exec "\$MK" sh -ec "curl -sf --connect-timeout 5 http://\${REG_PULL}/v2/ >/dev/null"; then
+    echo "OK: с ноды minikube отвечает http://\${REG_PULL}/v2/ (если всё же ImagePullBackOff — добавьте insecure-registry для HTTP registry:2)"
+    return 0
+  fi
+  echo "=== ОШИБКА: с ноды minikube НЕ открывается http://\${REG_PULL}/v2/ (kubelet не сможет скачать образ) ===" >&2
+  echo "Запустите registry:2 на хосте :5050 и пересоздайте minikube, например:" >&2
+  echo "  minikube stop && minikube start --insecure-registry \"\${REG_PULL}\"" >&2
+  echo "Проверка вручную: minikube ssh -- curl -sI http://\${REG_PULL}/v2/" >&2
+  return 1
+}
+
 if [ "\$USE_DOCKER_EXEC" = 1 ]; then
+  registry_probe
   render_manifest | docker exec -i -e KUBECONFIG="\$MK_KUBECONFIG" "\$MK" "\$MK_KUBECTL" apply -f -
   docker exec -e KUBECONFIG="\$MK_KUBECONFIG" "\$MK" "\$MK_KUBECTL" -n market rollout status deployment/user-service --timeout=180s
 else

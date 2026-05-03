@@ -1,5 +1,10 @@
 # Образ со статичным тегом для Sonar/IaC; в CI строка image: заменяется на K8S_PULL_REGISTRY/DOCKER_IMAGE:BUILD_NUMBER.
-# С ноды Minikube: host.minikube.internal:5050 (нужен minikube --insecure-registry).
+#
+# Если под в ImagePullBackOff / "trying and failing to pull image" — registry на хосте по HTTP:
+#   minikube stop
+#   minikube start --insecure-registry "host.minikube.internal:5050"
+# (или добавьте этот хост в insecure-registry вашего профиля и перезапустите кластер.)
+# Проверка с ноды: minikube ssh -- curl -sI http://host.minikube.internal:5050/v2/
 apiVersion: v1
 kind: Namespace
 metadata:
