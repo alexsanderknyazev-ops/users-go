@@ -232,12 +232,35 @@ else
   if docker inspect "\$MK" >/dev/null 2>&1; then
     USE_DOCKER_EXEC=1
     echo "kubeconfig в Jenkins нет — kubectl через docker exec \$MK"
-    docker exec "\$MK" kubectl cluster-info
   else
     echo "Нет \$JHOME/.kube/config и Docker-контейнер '\$MK' не найден."
     echo "Смонтируйте хостовый ~/.kube в Jenkins (-v ~/.kube:/var/jenkins_home/.kube) или задайте MINIKUBE_CONTAINER."
     exit 1
   fi
+fi
+
+# В kicbase kubectl часто не в PATH; kubeconfig внутри ноды — admin.conf
+MK_KUBECTL=""
+MK_KUBECONFIG="/etc/kubernetes/admin.conf"
+if [ "\$USE_DOCKER_EXEC" = 1 ]; then
+  MK_KUBECTL="\$(docker exec "\$MK" sh -c 'command -v kubectl 2>/dev/null || find /var/lib/minikube -type f -name kubectl 2>/dev/null | head -n1')"
+  if [ -z "\$MK_KUBECTL" ] || ! docker exec "\$MK" test -x "\$MK_KUBECTL" 2>/dev/null; then
+    echo "kubectl в образе \$MK не найден — качаем бинарь и копируем в контейнер"
+    ARCH="\$(docker exec "\$MK" uname -m)"
+    case "\$ARCH" in aarch64|arm64) KARCH=arm64 ;; x86_64) KARCH=amd64 ;; *) echo "unsupported minikube arch: \$ARCH"; exit 1 ;; esac
+    KVER="\$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
+    TMPK="/tmp/kubectl-mk-\${BUILD_NUMBER}-\${KVER}"
+    curl -fSL "https://dl.k8s.io/release/\${KVER}/bin/linux/\${KARCH}/kubectl" -o "\$TMPK"
+    chmod +x "\$TMPK"
+    docker cp "\$TMPK" "\$MK:/tmp/kubectl-from-jenkins"
+    docker exec "\$MK" chmod +x /tmp/kubectl-from-jenkins
+    MK_KUBECTL=/tmp/kubectl-from-jenkins
+  fi
+  echo "kubectl in \$MK: \$MK_KUBECTL"
+  if ! docker exec "\$MK" test -f "\$MK_KUBECONFIG" 2>/dev/null; then
+    MK_KUBECONFIG=/var/lib/minikube/kubeconfig
+  fi
+  docker exec -e KUBECONFIG="\$MK_KUBECONFIG" "\$MK" "\$MK_KUBECTL" cluster-info
 fi
 
 IMG='${params.K8S_PULL_REGISTRY}/${params.DOCKER_IMAGE}:${env.BUILD_NUMBER}'
@@ -252,8 +275,8 @@ render_manifest() {
 }
 
 if [ "\$USE_DOCKER_EXEC" = 1 ]; then
-  render_manifest | docker exec -i "\$MK" kubectl apply -f -
-  docker exec "\$MK" kubectl -n market rollout status deployment/user-service --timeout=180s
+  render_manifest | docker exec -i -e KUBECONFIG="\$MK_KUBECONFIG" "\$MK" "\$MK_KUBECTL" apply -f -
+  docker exec -e KUBECONFIG="\$MK_KUBECONFIG" "\$MK" "\$MK_KUBECTL" -n market rollout status deployment/user-service --timeout=180s
 else
   render_manifest | "\$KUBECTL" apply -f -
   "\$KUBECTL" -n market rollout status deployment/user-service --timeout=180s
