@@ -65,10 +65,18 @@ go test ./... -coverprofile=coverage.out -covermode=atomic
       steps {
         sh """#!/bin/bash
 set -eux
-if ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1 || ! command -v java >/dev/null 2>&1; then
+if ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1; then
   apt-get update -qq
-  apt-get install -y -qq curl ca-certificates unzip xz-utils openjdk-17-jre-headless
+  apt-get install -y -qq curl ca-certificates unzip xz-utils
 fi
+
+# Отдельно: SonarScanner с skipJreProvisioning должен запускать реальный java (не хардкод /usr/bin/java — на образе его может не быть).
+if [ ! -x /usr/bin/java ]; then
+  apt-get update -qq
+  apt-get install -y -qq openjdk-17-jre-headless
+fi
+JAVA_EXE="\$(command -v java)"
+test -n "\$JAVA_EXE" && test -x "\$JAVA_EXE"
 
 ARCH="\$(uname -m)"
 case "\$ARCH" in
@@ -102,7 +110,7 @@ cd "\${WORKSPACE}"
 # Не ходим на api.sonarcloud.io/analysis/jres (часто 403 до основного анализа); движок на JRE из агента.
 "\${SCANNER_HOME}/bin/sonar-scanner" \\
   -Dsonar.scanner.skipJreProvisioning=true \\
-  -Dsonar.scanner.javaExePath=/usr/bin/java \\
+  -Dsonar.scanner.javaExePath="\$JAVA_EXE" \\
   -Dsonar.host.url="${env.SONAR_HOST_URL}" \\
   -Dsonar.token="\${SONAR_TOKEN}"
 """
