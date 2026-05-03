@@ -44,13 +44,13 @@ pipeline {
     )
     string(
       name: 'K8S_DB_HOST',
-      defaultValue: 'host.minikube.internal',
-      description: 'DB host в Pod (нет Service postgres в кластере → хост Mac: host.minikube.internal; в кластере Postgres — postgres)'
+      defaultValue: 'postgres',
+      description: 'DB host: Service postgres в market (k8s/postgres-market.yaml) или host.minikube.internal для Postgres на Mac'
     )
     string(
       name: 'K8S_DB_PORT',
-      defaultValue: '5433',
-      description: 'Порт Postgres на хосте (как в resurse/property.yaml); для in-cluster обычно 5432'
+      defaultValue: '5432',
+      description: 'Порт Postgres: 5432 in-cluster; 5433 если БД на хосте (property.yaml)'
     )
   }
 
