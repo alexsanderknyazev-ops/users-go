@@ -283,12 +283,10 @@ if [ "\$USE_DOCKER_EXEC" = 1 ] && [ "\$CTR_IMP" = "true" ]; then
     exit 1
   fi
   echo "Импорт образа \$LOCAL_REF в containerd minikube (\$CTR_BIN import)…"
-  SAVE_TAR="/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
-  docker save "\$LOCAL_REF" -o "\$SAVE_TAR"
-  docker cp "\$SAVE_TAR" "\$MK:/tmp/k8s-ctr-import.tar"
-  docker exec "\$MK" "\$CTR_BIN" -n k8s.io images import /tmp/k8s-ctr-import.tar
-  docker exec "\$MK" rm -f /tmp/k8s-ctr-import.tar
-  rm -f "\$SAVE_TAR"
+  # docker cp в kic часто не даёт ctr увидеть файл — stream в /var/tmp, затем import.
+  docker save "\$LOCAL_REF" | docker exec -i "\$MK" sh -c "cat > /var/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
+  docker exec "\$MK" "\$CTR_BIN" -n k8s.io images import "/var/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
+  docker exec "\$MK" rm -f "/var/tmp/k8s-ctr-import-\${BUILD_NUMBER}.tar"
   IMG="\$LOCAL_REF"
   K8S_CTR_IMPORT=1
   echo "Деплой с локальным образом \$IMG и imagePullPolicy Never"
